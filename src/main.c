@@ -33,46 +33,48 @@ char* read_file(const char* filepath) {
     return buffer;
 }
 
+/* Load and compile a single shader from file */
+GLuint compile_shader(GLenum shader_type, const char* filepath) {
+    GLuint shader = 0;
+    char* source = NULL;
+    GLint success;
+
+    source = read_file(filepath);
+    if (!source) {
+        return 0;
+    }
+
+    shader = glCreateShader(shader_type);
+    glShaderSource(shader, 1, (const char**)&source, NULL);
+    glCompileShader(shader);
+
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char log[512];
+        glGetShaderInfoLog(shader, 512, NULL, log);
+        fprintf(stderr, "Shader compilation failed (%s): %s\n", filepath, log);
+        glDeleteShader(shader);
+        shader = 0;
+    }
+
+    free(source);
+    return shader;
+}
+
 /* Load, compile, and link a shader program from vertex and fragment shader files */
 GLuint load_program(const char* vertex_path, const char* fragment_path) {
     GLuint program = 0;
     GLuint vertex_shader = 0;
     GLuint fragment_shader = 0;
-    char* vertex_source = NULL;
-    char* fragment_source = NULL;
     GLint success;
 
-    vertex_source = read_file(vertex_path);
-    if (!vertex_source) {
+    vertex_shader = compile_shader(GL_VERTEX_SHADER, vertex_path);
+    if (!vertex_shader) {
         goto cleanup;
     }
 
-    vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, (const char**)&vertex_source, NULL);
-    glCompileShader(vertex_shader);
-
-    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char log[512];
-        glGetShaderInfoLog(vertex_shader, 512, NULL, log);
-        fprintf(stderr, "Vertex shader compilation failed (%s): %s\n", vertex_path, log);
-        goto cleanup;
-    }
-
-    fragment_source = read_file(fragment_path);
-    if (!fragment_source) {
-        goto cleanup;
-    }
-
-    fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, (const char**)&fragment_source, NULL);
-    glCompileShader(fragment_shader);
-
-    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char log[512];
-        glGetShaderInfoLog(fragment_shader, 512, NULL, log);
-        fprintf(stderr, "Fragment shader compilation failed (%s): %s\n", fragment_path, log);
+    fragment_shader = compile_shader(GL_FRAGMENT_SHADER, fragment_path);
+    if (!fragment_shader) {
         goto cleanup;
     }
 
@@ -88,14 +90,11 @@ GLuint load_program(const char* vertex_path, const char* fragment_path) {
         fprintf(stderr, "Program (%s, %s) linking failed: %s\n", vertex_path, fragment_path, log);
         glDeleteProgram(program);
         program = 0;
-        goto cleanup;
     }
 
 cleanup:
     if (vertex_shader) glDeleteShader(vertex_shader);
     if (fragment_shader) glDeleteShader(fragment_shader);
-    free(vertex_source);
-    free(fragment_source);
 
     return program;
 }
