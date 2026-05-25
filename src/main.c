@@ -33,7 +33,7 @@ char* read_file(const char* filepath) {
     return buffer;
 }
 
-/* Load and compile a single shader from file */
+/* Load and compile a single shader from file, caller must call glDeleteShader */
 GLuint compile_shader(GLenum shader_type, const char* filepath) {
     GLuint shader = 0;
     char* source = NULL;
@@ -61,7 +61,7 @@ GLuint compile_shader(GLenum shader_type, const char* filepath) {
     return shader;
 }
 
-/* Load, compile, and link a shader program from vertex and fragment shader files */
+/* Load, compile, and link a shader program from vertex and fragment shader files, caller must call glDeleteProgram */
 GLuint load_program(const char* vertex_path, const char* fragment_path) {
     GLuint program = 0;
     GLuint vertex_shader = 0;
@@ -115,6 +115,11 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
 int main(void) {
     GLFWwindow* window = NULL;
     GLuint program = 0;
+    GLuint sprite_vert_buf = 0;
+    GLuint sprite_model_transform_buf = 0;
+    GLuint sprite_inds_buf = 0;
+    GLuint sprite_texture = 0;
+    GLuint VAO = 0;
     int exit_code = EXIT_FAILURE;
 
     glfwSetErrorCallback(error_callback);
@@ -144,6 +149,84 @@ int main(void) {
         goto cleanup;
     }
 
+    //
+    //  0 - - - 1
+    //  | A   / |
+    //  |   /   |
+    //  | /   B |
+    //  2 - - - 3
+    //
+    float sprite_vertices[] = {
+    //    x   y   z   u   v
+         -1,  1,  0,  0,  0, // 0
+          1,  1,  0,  1,  0, // 1
+         -1, -1,  0,  0,  1, // 2
+          1, -1,  0,  1,  1, // 3
+    };
+    GLuint sprite_inds[] = {
+        0, 2, 1, // A
+        1, 2, 3, // B
+    };
+
+    // vertex array object
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    // vertex buffer object
+    glGenBuffers(1, &sprite_vert_buf);
+    glBindBuffer(GL_ARRAY_BUFFER, sprite_vert_buf);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(sprite_vertices), sprite_vertices, GL_STATIC_DRAW);
+
+    GLuint sprite_coords_loc = 0;
+    GLuint sprite_tex_coords_loc = 1;
+    GLuint sprite_model_transform_loc = 2;
+
+    glEnableVertexAttribArray(sprite_coords_loc);
+    glVertexAttribPointer(sprite_coords_loc, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+
+    glEnableVertexAttribArray(sprite_tex_coords_loc);
+    glVertexAttribPointer(sprite_tex_coords_loc, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+
+    float identity_matrix[] = {
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f,
+    };
+
+    glGenBuffers(1, &sprite_model_transform_buf);
+    glBindBuffer(GL_ARRAY_BUFFER, sprite_model_transform_buf);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(identity_matrix), identity_matrix, GL_DYNAMIC_DRAW);
+
+    GLuint i;
+    for (i = 0; i < 4; i++) {
+        GLuint loc = sprite_model_transform_loc + i;
+        glEnableVertexAttribArray(loc);
+        glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 4 * 4 * sizeof(float), (void*)(i * 4 * sizeof(float)));
+        glVertexAttribDivisor(loc, 1);
+    }
+
+    glGenBuffers(1, &sprite_inds_buf);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sprite_inds_buf);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(sprite_inds), sprite_inds, GL_STATIC_DRAW);
+
+    glGenTextures(1, &sprite_texture);
+    glBindTexture(GL_TEXTURE_2D, sprite_texture);
+    {
+        unsigned char white_pixel[] = { 255, 255, 255, 255 };
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white_pixel);
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glUseProgram(program);
+    glUniform1i(glGetUniformLocation(program, "albedoMap"), 0);
+    glUniformMatrix4fv(glGetUniformLocation(program, "texTransform"), 1, GL_FALSE, identity_matrix);
+
+    glBindVertexArray(0);
+
     glfwSwapInterval(1);
 
     while (!glfwWindowShouldClose(window)) {
@@ -151,7 +234,15 @@ int main(void) {
         glfwGetFramebufferSize(window, &width, &height);
 
         glViewport(0, 0, width, height);
+        glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
+
+        glUseProgram(program);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, sprite_texture);
+        glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -160,6 +251,26 @@ int main(void) {
     exit_code = EXIT_SUCCESS;
 
 cleanup:
+    if (sprite_texture) {
+        glDeleteTextures(1, &sprite_texture);
+    }
+
+    if (sprite_inds_buf) {
+        glDeleteBuffers(1, &sprite_inds_buf);
+    }
+
+    if (sprite_model_transform_buf) {
+        glDeleteBuffers(1, &sprite_model_transform_buf);
+    }
+
+    if (sprite_vert_buf) {
+        glDeleteBuffers(1, &sprite_vert_buf);
+    }
+
+    if (VAO) {
+        glDeleteVertexArrays(1, &VAO);
+    }
+
     if (program) {
         glDeleteProgram(program);
     }
