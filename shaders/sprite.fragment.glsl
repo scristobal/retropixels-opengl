@@ -1,10 +1,10 @@
 #version 460 core
 
-uniform sampler2D albedoMap;
+layout (binding = 0) uniform sampler2D albedoMap;
 
-in vec2 fragTexCoord;
+layout (location = 0) in vec2 fragTexCoord;
 
-out vec4 fragColor;
+layout (location = 0) out vec4 fragColor;
 
 void main() {
     vec4 texColor = texture(albedoMap, fragTexCoord);
