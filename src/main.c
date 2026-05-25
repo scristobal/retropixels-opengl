@@ -3,7 +3,10 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-#include <png.h>
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#include <stb_image.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,95 +104,17 @@ cleanup:
 }
 
 GLuint load_texture_png(const char* filepath) {
-    FILE* file = NULL;
-    png_structp png = NULL;
-    png_infop info = NULL;
-    png_bytep pixels = NULL;
-    png_bytep* rows = NULL;
-    png_byte header[8];
-    png_uint_32 width = 0;
-    png_uint_32 height = 0;
-    int color_type = 0;
-    int bit_depth = 0;
-    png_size_t rowbytes = 0;
+    unsigned char* pixels = NULL;
+    int width = 0;
+    int height = 0;
+    int channels = 0;
     GLuint texture = 0;
 
-    file = fopen(filepath, "rb");
-    if (!file) {
-        fprintf(stderr, "Failed to open texture: %s\n", filepath);
+    pixels = stbi_load(filepath, &width, &height, &channels, 4);
+    if (!pixels) {
+        fprintf(stderr, "Failed to load PNG texture (%s): %s\n", filepath, stbi_failure_reason());
         return 0;
     }
-
-    if (fread(header, 1, sizeof(header), file) != sizeof(header) || png_sig_cmp(header, 0, sizeof(header))) {
-        fprintf(stderr, "Not a PNG texture: %s\n", filepath);
-        goto cleanup;
-    }
-
-    png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    if (!png) {
-        fprintf(stderr, "Failed to create PNG reader: %s\n", filepath);
-        goto cleanup;
-    }
-
-    info = png_create_info_struct(png);
-    if (!info) {
-        fprintf(stderr, "Failed to create PNG info: %s\n", filepath);
-        goto cleanup;
-    }
-
-    if (setjmp(png_jmpbuf(png))) {
-        fprintf(stderr, "Failed to read PNG texture: %s\n", filepath);
-        goto cleanup;
-    }
-
-    png_init_io(png, file);
-    png_set_sig_bytes(png, sizeof(header));
-    png_read_info(png, info);
-
-    width = png_get_image_width(png, info);
-    height = png_get_image_height(png, info);
-    color_type = png_get_color_type(png, info);
-    bit_depth = png_get_bit_depth(png, info);
-
-    if (bit_depth == 16) {
-        png_set_strip_16(png);
-    }
-    if (color_type == PNG_COLOR_TYPE_PALETTE) {
-        png_set_palette_to_rgb(png);
-    }
-    if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8) {
-        png_set_expand_gray_1_2_4_to_8(png);
-    }
-    if (png_get_valid(png, info, PNG_INFO_tRNS)) {
-        png_set_tRNS_to_alpha(png);
-    }
-    if (color_type == PNG_COLOR_TYPE_RGB ||
-        color_type == PNG_COLOR_TYPE_GRAY ||
-        color_type == PNG_COLOR_TYPE_PALETTE) {
-        png_set_filler(png, 0xff, PNG_FILLER_AFTER);
-    }
-    if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
-        png_set_gray_to_rgb(png);
-    }
-
-    png_read_update_info(png, info);
-    rowbytes = png_get_rowbytes(png, info);
-
-    pixels = (png_bytep)malloc(rowbytes * height);
-    rows = (png_bytep*)malloc(sizeof(png_bytep) * height);
-    if (!pixels || !rows) {
-        fprintf(stderr, "Failed to allocate memory for texture: %s\n", filepath);
-        goto cleanup;
-    }
-
-    {
-        png_uint_32 y;
-        for (y = 0; y < height; y++) {
-            rows[y] = pixels + y * rowbytes;
-        }
-    }
-
-    png_read_image(png, rows);
 
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
@@ -201,17 +126,8 @@ GLuint load_texture_png(const char* filepath) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-cleanup:
-    free(rows);
-    free(pixels);
-    if (info) {
-        png_destroy_read_struct(&png, &info, NULL);
-    } else if (png) {
-        png_destroy_read_struct(&png, NULL, NULL);
-    }
-    if (file) {
-        fclose(file);
-    }
+    (void)channels;
+    stbi_image_free(pixels);
 
     return texture;
 }
