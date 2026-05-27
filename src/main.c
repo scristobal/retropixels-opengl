@@ -22,6 +22,14 @@
 #define SPRITE_TEXTURE_HEIGHT 32
 #define SPRITE_TEXTURE_MIP_LEVELS 6
 
+#ifndef RETROPIXELS_SHADERS_DIR
+#define RETROPIXELS_SHADERS_DIR "shaders"
+#endif
+
+#ifndef RETROPIXELS_ASSETS_DIR
+#define RETROPIXELS_ASSETS_DIR "assets"
+#endif
+
 /* Load entire file into memory, caller must free() returned pointer */
 char* read_file(const char* filepath) {
     FILE* file = fopen(filepath, "rb");
@@ -152,6 +160,10 @@ int main(void) {
     int sprite_texture_channels = 0;
     int exit_code = EXIT_FAILURE;
 
+    const char* sprite_vertex_shader_path = RETROPIXELS_SHADERS_DIR "/sprite.vertex.glsl";
+    const char* sprite_fragment_shader_path = RETROPIXELS_SHADERS_DIR "/sprite.fragment.glsl";
+    const char* sprite_texture_path = RETROPIXELS_ASSETS_DIR "/avatar-1x.png";
+
     glfwSetErrorCallback(error_callback);
 
     if (!glfwInit()) {
@@ -186,13 +198,13 @@ int main(void) {
     glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, GL_FALSE);
     glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
 
-    vertex_program = load_shader_stage(GL_VERTEX_SHADER, "shaders/sprite.vertex.glsl");
+    vertex_program = load_shader_stage(GL_VERTEX_SHADER, sprite_vertex_shader_path);
     if (!vertex_program) {
         goto cleanup;
     }
     glObjectLabel(GL_PROGRAM, vertex_program, -1, "sprite vertex stage");
 
-    fragment_program = load_shader_stage(GL_FRAGMENT_SHADER, "shaders/sprite.fragment.glsl");
+    fragment_program = load_shader_stage(GL_FRAGMENT_SHADER, sprite_fragment_shader_path);
     if (!fragment_program) {
         goto cleanup;
     }
@@ -276,11 +288,13 @@ int main(void) {
     glNamedBufferStorage(sprite_inds_buf, sizeof(sprite_inds), sprite_inds, 0);
     glVertexArrayElementBuffer(VAO, sprite_inds_buf);
 
-    sprite_pixels = stbi_load("assets/avatar-1x.png", &sprite_texture_width, &sprite_texture_height, &sprite_texture_channels, 4);
+    sprite_pixels = stbi_load(sprite_texture_path, &sprite_texture_width, &sprite_texture_height, &sprite_texture_channels, 4);
+
     if (!sprite_pixels) {
-        fprintf(stderr, "Failed to load PNG texture (assets/avatar-1x.png): %s\n", stbi_failure_reason());
+        fprintf(stderr, "Failed to load PNG texture (%s): %s\n", sprite_texture_path, stbi_failure_reason());
         goto cleanup;
     }
+
     if (sprite_texture_width != SPRITE_TEXTURE_WIDTH || sprite_texture_height != SPRITE_TEXTURE_HEIGHT) {
         fprintf(stderr, "Unexpected sprite texture dimensions: got %dx%d, expected %dx%d\n",
             sprite_texture_width,
@@ -300,9 +314,6 @@ int main(void) {
     glTextureParameteri(sprite_texture, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTextureParameteri(sprite_texture, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTextureParameteri(sprite_texture, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    stbi_image_free(sprite_pixels);
-    sprite_pixels = NULL;
 
     glProgramUniformMatrix4fv(vertex_program, SPRITE_TEX_TRANSFORM_LOCATION, 1, GL_FALSE, identity_matrix);
     glBindProgramPipeline(sprite_pipeline);
